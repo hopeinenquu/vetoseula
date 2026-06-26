@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tennis-pikaseula v2</title>
+<style>
+  /* ---- Instrumentti-estetiikka: kylmä, analyyttinen, ei vedonlyöntisivu ----
+     Tausta lähes musta sinivihreällä vivahteella (mittaristo). Data monospacella.
+     Yksi signaalivärimuuttuja: läpäisy = kylmä syaani, hylkäys = vaimea harmaa. */
+  :root {
+    --bg: #0d1117;
+    --panel: #141b22;
+    --panel-2: #1b242d;
+    --line: #2a3640;
+    --text: #c9d4de;
+    --dim: #6b7b88;
+    --pass: #36d6c3;       /* kylmä syaani – läpäisy */
+    --pass-bg: #36d6c31a;
+    --reject: #5a6671;     /* vaimea – hylkäys, ei punaista (ei dramatiikkaa) */
+    --warn: #d9a441;       /* keltainen – epäluotettava data */
+    --warn-bg: #d9a4411a;
+    --mono: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
+
+  header { border-bottom: 1px solid var(--line); padding-bottom: 16px; margin-bottom: 24px; }
+  .title {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--pass);
+    margin: 0 0 4px;
+  }
+  h1 { font-size: 26px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 6px; }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .field label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 6px;
+  }
+  select, textarea {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 14px;
+  }
+  select:focus, textarea:focus { outline: 2px solid var(--pass); outline-offset: -1px; }
+  textarea { min-height: 132px; resize: vertical; line-height: 1.45; white-space: pre; }
+
+  .row-actions { display: flex; gap: 10px; align-items: center; margin: 14px 0 4px; }
+  button.primary {
+    background: var(--pass);
+    color: #06201d;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 22px;
+    font-weight: 650;
+    font-size: 15px;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+  button.ghost {
+    background: transparent;
+    color: var(--dim);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 11px 16px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .status { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-left: auto; }
+
+  /* Asetuspaneeli proxy-URL:lle */
+  details.cfg { margin-bottom: 18px; }
+  details.cfg summary {
+    cursor: pointer; font-family: var(--mono); font-size: 12px;
+    color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .cfg-body { margin-top: 10px; }
+  .cfg-body input {
+    width: 100%; background: var(--panel); border: 1px solid var(--line);
+    color: var(--text); border-radius: 8px; padding: 9px 12px;
+    font-family: var(--mono); font-size: 13px;
+  }
+  .cfg-note { color: var(--dim); font-size: 12px; margin-top: 6px; }
+
+  /* Tulokset */
+  .summary {
+    display: flex; gap: 18px; flex-wrap: wrap;
+    font-family: var(--mono); font-size: 12px; color: var(--dim);
+    margin: 22px 0 12px; padding-top: 16px; border-top: 1px solid var(--line);
+  }
+  .summary b { color: var(--text); font-weight: 600; }
+  .summary .pass-count { color: var(--pass); }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--reject);
+    border-radius: 8px;
+    padding: 13px 15px;
+    margin-bottom: 9px;
+  }
+  .card.pass { border-left-color: var(--pass); background: linear-gradient(90deg, var(--pass-bg), transparent 40%); }
+  .card.warn { border-left-color: var(--warn); }
+  .card-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .verdict {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; padding: 2px 7px; border-radius: 4px;
+  }
+  .verdict.pass { color: var(--pass); background: var(--pass-bg); }
+  .verdict.reject { color: var(--reject); border: 1px solid var(--line); }
+  .verdict.warn { color: var(--warn); background: var(--warn-bg); }
+  .match { font-family: var(--mono); font-size: 15px; font-weight: 600; }
+  .reason { color: var(--dim); font-size: 13px; margin-top: 7px; font-family: var(--mono); }
+  .reason .edge-pos { color: var(--pass); }
+
+  .detail-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px;
+    margin-top: 10px; font-family: var(--mono); font-size: 12.5px;
+  }
+  .detail-grid .k { color: var(--dim); }
+  .detail-grid .v { color: var(--text); text-align: right; }
+
+  .empty { color: var(--dim); font-family: var(--mono); font-size: 13px; padding: 20px 0; text-align: center; }
+  .err { color: var(--warn); font-family: var(--mono); font-size: 13px; padding: 12px 14px; background: var(--warn-bg); border-radius: 8px; margin-top: 14px; }
+
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; font-family: var(--mono); }
+
+  @media (max-width: 560px) {
+    .controls { grid-template-columns: 1fr; }
+    .detail-grid { grid-template-columns: 1fr; }
+    h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="title">Tennis-pikaseula · v2</p>
+    <h1>Karsii ennen kuin näet vaivaa</h1>
+    <p class="sub">Karkea Elo-pohjainen edge. Läpäisy = ottelu ansaitsee syväanalyysin (v3.4), ei vetosuositus.</p>
+  </header>
+
+  <details class="cfg">
+    <summary>Proxy-asetukset</summary>
+    <div class="cfg-body">
+      <input id="proxyUrl" type="text" placeholder="https://&lt;projekti&gt;.supabase.co/functions/v1/elo-proxy" />
+      <p class="cfg-note">Supabase Edge Function -osoite. Tallentuu selaimen muistiin tälle istunnolle. Elo-data haetaan tästä.</p>
+    </div>
+  </details>
+
+  <div class="controls">
+    <div class="field">
+      <label for="tour">Kiertue</label>
+      <select id="tour">
+        <option value="atp">ATP (miehet)</option>
+        <option value="wta">WTA (naiset)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="surface">Alusta</label>
+      <select id="surface">
+        <option value="grass">Ruoho (grass)</option>
+        <option value="clay">Savi (clay)</option>
+        <option value="hard">Kova (hard)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="matches">Ottelulista — liimaa TennisExplorer-rivit sellaisenaan</label>
+    <textarea id="matches" spellcheck="false" placeholder="today, 11:10 	QF 	Quinn - Kopriva 		3-0 	1.50 	2.55
+today, 12:30 	QF 	Darderi (1) - Borges 		0-2 	2.36 	1.57"></textarea>
+  </div>
+
+  <div class="row-actions">
+    <button class="primary" id="run">Seulo</button>
+    <button class="ghost" id="clear">Tyhjennä</button>
+    <span class="status" id="status"></span>
+  </div>
+
+  <div id="errbox"></div>
+  <div id="results"></div>
+
+  <footer>
+    Edge-kynnys 3 pp · Elo-paino normalisoitu (alusta 61,5 % / kokonais 38,5 %) · vire ja kuormitus jätetty syväanalyysiin
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+// ---------- Asetukset ----------
+const EDGE_THRESHOLD_PP = 3.0;      // v3.4 minimikynnys
+const W_SURFACE = 0.40, W_OVERALL = 0.25;  // v3.4 kohta 11
+const W_SUM = W_SURFACE + W_OVERALL;        // 0.65
+const NW_SURFACE = W_SURFACE / W_SUM;       // 0.615...  normalisoitu
+const NW_OVERALL = W_OVERALL / W_SUM;       // 0.385...
+
+const els = {
+  proxyUrl: document.getElementById("proxyUrl"),
+  tour: document.getElementById("tour"),
+  surface: document.getElementById("surface"),
+  matches: document.getElementById("matches"),
+  run: document.getElementById("run"),
+  clear: document.getElementById("clear"),
+  status: document.getElementById("status"),
+  results: document.getElementById("results"),
+  errbox: document.getElementById("errbox"),
+};
+
+// Säilytä proxy-URL istunnon ajan (ei localStoragea artifact-yhteensopivuuden vuoksi;
+// tässä oikea sivu GitHub Pagesissa → sessionStorage on ok, mutta pidetään muuttujassa)
+let PROXY_URL = "";
+els.proxyUrl.addEventListener("input", () => { PROXY_URL = els.proxyUrl.value.trim(); });
+
+// ---------- Parseri ----------
+// Joustava: ei luota kiinteään sarakemäärään.
+// - " - " erottaa pelaajat
+// - (n) sijoitukset stripataan
+// - kaksi viimeistä lukua rivin lopusta = kertoimet
+// - H2H-sarake (esim. 3-0) ohitetaan laskennasta
+function stripSeed(name) {
+  return name.replace(/\(\d+\)/g, "").replace(/\s+/g, " ").trim();
+}
+
+// Kierroskoodit jotka poistetaan pelaajanimen edestä
+const ROUND_CODES = /^(QF|SF|F|R16|R32|R64|R128|1R|2R|3R|q-|qual|Q\d?)$/i;
+
+function parseLine(line) {
+  const raw = line.replace(/\u00a0/g, " ").trim();
+  if (!raw) return null;
+
+  // Kertoimet: kaksi viimeistä desimaalilukua välillä 1.01–40
+  const numRe = /\d+\.\d+/g;
+  const nums = (raw.match(numRe) || []).map(Number);
+  const odds = nums.filter((n) => n >= 1.01 && n <= 40);
+  if (odds.length < 2) return { raw, error: "kertoimia ei löytynyt (tarvitaan 2)" };
+  const oddsA = odds[odds.length - 2];
+  const oddsB = odds[odds.length - 1];
+
+  // " - " erottaa pelaajat (välilyönnit molemmin puolin → ei sotke
+  // tavuviivallisia nimiä kuten Auger-Aliassime)
+  const idx = raw.indexOf(" - ");
+  if (idx === -1) return { raw, error: "pelaajia ei voitu erottaa (' - ' puuttuu)" };
+
+  // Pelaaja A: viimeinen tab-lohko ennen erotinta, johtavat
+  // aika-/kierroskoodit pudotettu
+  let beforeChunk = raw.slice(0, idx).split(/\t/).pop().trim();
+  let beforeTokens = beforeChunk.split(/\s+/);
+  while (beforeTokens.length > 1 && (
+    ROUND_CODES.test(beforeTokens[0]) ||
+    /^\d/.test(beforeTokens[0]) ||
+    /,$/.test(beforeTokens[0]) ||
+    /^(today|tomorrow)$/i.test(beforeTokens[0])
+  )) {
+    beforeTokens.shift();
+  }
+  const a = stripSeed(beforeTokens.join(" "));
+
+  // Pelaaja B: erottimen jälkeen ensimmäiseen tab/2+väliin asti,
+  // lopun numerot (tulos) pois
+  let afterChunk = raw.slice(idx + 3).split(/\t|\s{2,}/)[0].trim();
+  afterChunk = afterChunk.replace(/\s+\d.*$/, "");
+  const b = stripSeed(afterChunk);
+
+  if (!a || !b) return { raw, error: "pelaajia ei voitu erottaa" };
+  return { raw, a, b, oddsA, oddsB };
+}
+
+// ---------- Nimimatchaus (fuzzy) ----------
+// Tennis Abstract: "Last F." tai "First Last". TennisExplorer: usein "Sukunimi".
+// Verrataan sukunimellä + ensimmäisen kirjaimen heuristiikalla.
+function normName(s) {
+  return s.toLowerCase()
+    .replace(/&nbsp;/g, " ")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[.''\-]/g, " ")
+    .replace(/\s+/g, " ").trim();
+}
+function lastToken(s) {
+  const parts = normName(s).split(" ").filter(Boolean);
+  return parts[parts.length - 1] || "";
+}
+function matchPlayer(query, players) {
+  const qNorm = normName(query);
+  const qLast = lastToken(query);
+  let best = null, bestScore = 0;
+  for (const p of players) {
+    const pNorm = normName(p.name);
+    const pLast = lastToken(p.name);
+    let score = 0;
+    if (pNorm === qNorm) score = 100;
+    else if (pLast && pLast === qLast) score = 80;
+    else if (pNorm.includes(qLast) || qNorm.includes(pLast)) score = 55;
+    else if (pLast.startsWith(qLast) || qLast.startsWith(pLast)) score = 40;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  return bestScore >= 40 ? { player: best, score: bestScore } : null;
+}
+
+// ---------- Elo → todennäköisyys ----------
+function eloProb(eloA, eloB) {
+  return 1 / (1 + Math.pow(10, (eloB - eloA) / 400));
+}
+function surfaceField(surface) {
+  return surface === "clay" ? "clayElo" : surface === "hard" ? "hardElo" : "grassElo";
+}
+
+function combinedProb(pa, pb, surface) {
+  const sf = surfaceField(surface);
+  const sA = pa[sf], sB = pb[sf];
+  const oA = pa.elo, oB = pb.elo;
+  if (oA == null || oB == null) return { p: null, missing: "kokonais-Elo" };
+  // alusta-Elon puuttuessa: v3.4 sallii karkean korjauksen, mutta seula
+  // merkitsee tämän epäluotettavaksi (otanta 0 → hylätään myöhemmin)
+  let pSurface = (sA != null && sB != null) ? eloProb(sA, sB) : null;
+  const pOverall = eloProb(oA, oB);
+  let p, surfaceMissing = false;
+  if (pSurface != null) {
+    p = NW_SURFACE * pSurface + NW_OVERALL * pOverall;
+  } else {
+    p = pOverall;        // pelkkä kokonais-Elo
+    surfaceMissing = true;
+  }
+  return { p, surfaceMissing, pSurface, pOverall };
+}
+
+// ---------- Seulonta ----------
+async function fetchElo(tour) {
+  if (!PROXY_URL) throw new Error("Proxy-URL puuttuu. Avaa Proxy-asetukset ja liitä Supabase-funktion osoite.");
+  const url = PROXY_URL + (PROXY_URL.includes("?") ? "&" : "?") + "tour=" + tour;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Proxy vastasi statuksella " + res.status);
+  const data = await res.json();
+  return data;
+}
+
+function pct(x) { return (x * 100).toFixed(1) + "%"; }
+function pp(x) { return (x >= 0 ? "+" : "") + (x).toFixed(1) + "pp"; }
+
+function evaluate(parsed, players, surface) {
+  // palauta arvio molemmille puolille, valitse parempi edge
+  const mA = matchPlayer(parsed.a, players);
+  const mB = matchPlayer(parsed.b, players);
+  if (!mA || !mB) {
+    const miss = !mA ? parsed.a : parsed.b;
+    return { verdict: "warn", reasonText: "Elo-dataa ei löytynyt: " + miss + " (nimimatchaus epäonnistui)" };
+  }
+  const cp = combinedProb(mA.player, mB.player, surface);
+  if (cp.p == null) {
+    return { verdict: "warn", reasonText: "Puuttuu " + cp.missing };
+  }
+  const pA = cp.p, pB = 1 - pA;
+  const impA = 1 / parsed.oddsA, impB = 1 / parsed.oddsB;
+  const edgeA = (pA - impA) * 100;
+  const edgeB = (pB - impB) * 100;
+
+  // valitse puoli jolla suurempi edge
+  const sideA = edgeA >= edgeB;
+  const side = sideA ? parsed.a : parsed.b;
+  const edge = sideA ? edgeA : edgeB;
+  const pSide = sideA ? pA : pB;
+  const oddSide = sideA ? parsed.oddsA : parsed.oddsB;
+
+  // v3.4: alusta-Elon otanta 0 / puuttuu → epäluotettava, ei läpäise
+  if (cp.surfaceMissing) {
+    return {
+      verdict: "warn",
+      reasonText: "Alusta-Elo puuttuu (" + surface + ") → epäluotettava, ei seulan läpäisyä",
+      detail: { side, edge, pSide, oddSide, eloA: mA.player, eloB: mB.player, surface, surfaceMissing: true, matchScore: Math.min(mA.score, mB.score) },
+    };
+  }
+
+  const pass = edge >= EDGE_THRESHOLD_PP;
+  return {
+    verdict: pass ? "pass" : "reject",
+    side, edge, pSide, oddSide,
+    detail: { side, edge, pSide, oddSide, eloA: mA.player, eloB: mB.player, surface, matchScore: Math.min(mA.score, mB.score), pSurface: cp.pSurface, pOverall: cp.pOverall },
+    reasonText: pass
+      ? side + ": edge " + pp(edge) + " (p " + pct(pSide) + ", kerroin " + oddSide.toFixed(2) + ") → SYVÄANALYYSIIN"
+      : "paras edge " + pp(edge) + " < " + EDGE_THRESHOLD_PP + "pp → hylätty",
+  };
+}
+
+function renderCard(parsed, result) {
+  const div = document.createElement("div");
+  const cls = result.verdict === "pass" ? "pass" : result.verdict === "warn" ? "warn" : "";
+  div.className = "card " + cls;
+
+  const vlabel = result.verdict === "pass" ? "Läpäisi" : result.verdict === "warn" ? "Epäluotettava" : "Hylätty";
+  const vcls = result.verdict === "pass" ? "pass" : result.verdict === "warn" ? "warn" : "reject";
+
+  let detailHtml = "";
+  if (result.detail && result.detail.eloA) {
+    const d = result.detail;
+    const sf = surfaceField(d.surface);
+    detailHtml = '<div class="detail-grid">' +
+      '<span class="k">' + escapeHtml(d.eloA.name) + ' — kok / alusta</span><span class="v">' + (d.eloA.elo ?? "–") + " / " + (d.eloA[sf] ?? "–") + '</span>' +
+      '<span class="k">' + escapeHtml(d.eloB.name) + ' — kok / alusta</span><span class="v">' + (d.eloB.elo ?? "–") + " / " + (d.eloB[sf] ?? "–") + '</span>' +
+      (d.matchScore < 80 ? '<span class="k">nimimatch-varmuus</span><span class="v" style="color:var(--warn)">' + d.matchScore + '/100 — tarkista</span>' : "") +
+      '</div>';
+  }
+
+  div.innerHTML =
+    '<div class="card-head">' +
+      '<span class="verdict ' + vcls + '">' + vlabel + '</span>' +
+      '<span class="match">' + escapeHtml(parsed.a) + ' – ' + escapeHtml(parsed.b) + '</span>' +
+    '</div>' +
+    '<div class="reason ' + (result.verdict === "pass" ? "edge-pos" : "") + '">' + escapeHtml(result.reasonText) + '</div>' +
+    detailHtml;
+  return div;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function run() {
+  els.errbox.innerHTML = "";
+  els.results.innerHTML = "";
+  const lines = els.matches.value.split("\n").map((l) => l).filter((l) => l.trim());
+  if (lines.length === 0) {
+    els.results.innerHTML = '<div class="empty">Liimaa ottelulista yllä.</div>';
+    return;
+  }
+
+  els.run.disabled = true;
+  els.status.textContent = "haetaan Elo-dataa…";
+
+  let eloData;
+  try {
+    eloData = await fetchElo(els.tour.value);
+  } catch (e) {
+    els.errbox.innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
+    els.run.disabled = false;
+    els.status.textContent = "";
+    return;
+  }
+
+  // Kriittinen tarkistus: saiko proxy oikeaa dataa vai tyhjän rungon?
+  if (!eloData.players || eloData.count === 0) {
+    els.errbox.innerHTML = '<div class="err">Proxy ei saanut jäsenneltävää Elo-dataa (count=0). ' +
+      'Tennis Abstractin data tulee todennäköisesti JS-renderöinnin takaa → tarvitaan copy-paste-haara. ' +
+      'Diagnostiikka: ' + escapeHtml(JSON.stringify(eloData.diagnostics || [])) + '</div>';
+    els.run.disabled = false;
+    els.status.textContent = "";
+    return;
+  }
+
+  els.status.textContent = eloData.count + " pelaajaa Elo-listassa · lähde: " + (eloData.source || "?");
+  const players = eloData.players;
+  const surface = els.surface.value;
+
+  let passCount = 0, rejectCount = 0, warnCount = 0;
+  const frag = document.createDocumentFragment();
+
+  for (const line of lines) {
+    const parsed = parseLine(line);
+    if (!parsed) continue;
+    if (parsed.error) {
+      warnCount++;
+      const div = document.createElement("div");
+      div.className = "card warn";
+      div.innerHTML = '<div class="card-head"><span class="verdict warn">Parserivirhe</span>' +
+        '<span class="match">' + escapeHtml(parsed.raw.slice(0, 60)) + '</span></div>' +
+        '<div class="reason">' + escapeHtml(parsed.error) + '</div>';
+      frag.appendChild(div);
+      continue;
+    }
+    const result = evaluate(parsed, players, surface);
+    if (result.verdict === "pass") passCount++;
+    else if (result.verdict === "warn") warnCount++;
+    else rejectCount++;
+    frag.appendChild(renderCard(parsed, result));
+  }
+
+  const summary = document.createElement("div");
+  summary.className = "summary";
+  summary.innerHTML =
+    '<span class="pass-count"><b>' + passCount + '</b> läpäisi</span>' +
+    '<span><b>' + rejectCount + '</b> hylätty</span>' +
+    '<span><b>' + warnCount + '</b> epäluotettava / virhe</span>';
+  els.results.appendChild(summary);
+  els.results.appendChild(frag);
+
+  els.run.disabled = false;
+}
+
+els.run.addEventListener("click", run);
+els.clear.addEventListener("click", () => {
+  els.matches.value = ""; els.results.innerHTML = ""; els.errbox.innerHTML = ""; els.status.textContent = "";
+});
+els.matches.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") run();
+});
+</script>
+</body>
+</html>
