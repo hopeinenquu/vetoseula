@@ -242,15 +242,69 @@
   .card-bet-msg.ok { color: var(--pass); }
   .card-bet-msg.err { color: var(--warn); }
 
+  /* Kirjautumisnäkymä (overlay) */
+  #loginOverlay {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+    padding: 20px;
+  }
+  #loginOverlay.hidden { display: none; }
+  .login-box {
+    width: 100%; max-width: 360px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; padding: 28px 24px;
+  }
+  .login-box .title { color: var(--pass); margin-bottom: 4px; }
+  .login-box h2 { margin: 0 0 20px; font-size: 20px; font-weight: 650; }
+  .login-box label {
+    display: block; font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin: 12px 0 5px;
+  }
+  .login-box input {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--line);
+    color: var(--text); border-radius: 8px; padding: 10px 12px;
+    font-family: var(--mono); font-size: 14px;
+  }
+  .login-box input:focus { outline: 2px solid var(--pass); outline-offset: -1px; }
+  .login-box button {
+    width: 100%; margin-top: 18px; background: var(--pass); color: #06201d;
+    border: none; border-radius: 8px; padding: 12px; font-weight: 650;
+    font-size: 15px; cursor: pointer; font-family: var(--sans);
+  }
+  .login-box button:disabled { opacity: 0.5; cursor: default; }
+  .login-msg { font-family: var(--mono); font-size: 12px; margin-top: 12px; min-height: 16px; }
+  .login-msg.err { color: var(--warn); }
+  .logout-bar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+  .logout-bar button {
+    background: transparent; border: 1px solid var(--line); color: var(--dim);
+    border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: var(--mono);
+  }
+
   @media (max-width: 560px) {
     .controls { grid-template-columns: 1fr; }
     .detail-grid { grid-template-columns: 1fr; }
     h1 { font-size: 22px; }
   }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+
+<!-- Kirjautumisnäkymä — peittää koko sivun kunnes kirjautunut -->
+<div id="loginOverlay">
+  <div class="login-box">
+    <p class="title">Tennis-seula · v2</p>
+    <h2>Kirjaudu sisään</h2>
+    <label for="loginEmail">Sähköposti</label>
+    <input id="loginEmail" type="email" autocomplete="username" />
+    <label for="loginPass">Salasana</label>
+    <input id="loginPass" type="password" autocomplete="current-password" />
+    <button id="loginBtn">Kirjaudu</button>
+    <div class="login-msg" id="loginMsg"></div>
+  </div>
+</div>
+
 <div class="wrap">
+  <div class="logout-bar"><button id="logoutBtn">Kirjaudu ulos</button></div>
   <header>
     <p class="title">Tennis-pikaseula · v2</p>
     <h1>Karsii ennen kuin näet vaivaa</h1>
@@ -308,16 +362,6 @@ today, 12:30 	QF 	Darderi (1) - Borges 		0-2 	2.36 	1.57"></textarea>
 
   <!-- ============ SEURANTA-PANEELI ============ -->
   <div class="panel" id="panel-seuranta">
-    <details class="cfg">
-      <summary>Supabase-asetukset</summary>
-      <div class="cfg-body">
-        <input id="sbUrl" type="text" placeholder="https://&lt;projekti&gt;.supabase.co" style="margin-bottom:8px;" />
-        <input id="sbAnonKey" type="password" placeholder="anon public -avain" style="margin-bottom:8px;" />
-        <input id="sbSeulaKey" type="password" placeholder="x-seula-key (sama kuin SQL:ssä)" />
-        <p class="cfg-note">anon-avain ja seula-avain tallentuvat tämän selaimen muistiin. anon-avain on julkinen ja turvallinen; seula-avain suojaa datasi RLS:llä.</p>
-      </div>
-    </details>
-
     <p class="sub" style="margin-bottom:16px;">Kirjaa lyöty veto. Sulkeutuva kerroin ja tulos lisätään myöhemmin käsin → CLV laskeutuu automaattisesti.</p>
 
     <div class="form-grid">
@@ -821,26 +865,79 @@ document.querySelectorAll(".tab").forEach((tab) => {
 });
 
 // ============ SEURANTA / CLV ============
-const sb = {
-  url: document.getElementById("sbUrl"),
-  anon: document.getElementById("sbAnonKey"),
-  seula: document.getElementById("sbSeulaKey"),
+// ============ SUPABASE AUTH ============
+// anon/publishable-avain on turvallinen upottaa: RLS suojaa datan.
+// Korvaa SUPABASE_ANON_KEY omalla anon/publishable-avaimellasi.
+const SUPABASE_URL = "https://jhbzfdlkvhnfntqnumip.supabase.co";
+const SUPABASE_ANON_KEY = "KORVAA_TAMA_ANON_AVAIMELLA";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentSession = null;
+
+const loginEls = {
+  overlay: document.getElementById("loginOverlay"),
+  email: document.getElementById("loginEmail"),
+  pass: document.getElementById("loginPass"),
+  btn: document.getElementById("loginBtn"),
+  msg: document.getElementById("loginMsg"),
+  logout: document.getElementById("logoutBtn"),
 };
 
-// Esitäytä Supabase-URL oletuksella (sama projekti kuin proxy)
-sb.url.value = "https://jhbzfdlkvhnfntqnumip.supabase.co";
-
-// Lataa tallennetut asetukset sessionStoragesta
-try {
-  if (sessionStorage.getItem("sbUrl")) sb.url.value = sessionStorage.getItem("sbUrl");
-  if (sessionStorage.getItem("sbAnon")) sb.anon.value = sessionStorage.getItem("sbAnon");
-  if (sessionStorage.getItem("sbSeula")) sb.seula.value = sessionStorage.getItem("sbSeula");
-} catch (e) {}
-[sb.url, sb.anon, sb.seula].forEach((el, i) => {
-  el.addEventListener("input", () => {
-    try { sessionStorage.setItem(["sbUrl", "sbAnon", "sbSeula"][i], el.value.trim()); } catch (e) {}
+async function doLogin() {
+  loginEls.msg.className = "login-msg";
+  loginEls.msg.textContent = "Kirjaudutaan…";
+  loginEls.btn.disabled = true;
+  const { data, error } = await supabaseClient.auth.signInWithPassword({
+    email: loginEls.email.value.trim(),
+    password: loginEls.pass.value,
   });
+  loginEls.btn.disabled = false;
+  if (error) {
+    loginEls.msg.className = "login-msg err";
+    loginEls.msg.textContent = "Kirjautuminen epäonnistui: " + error.message;
+    return;
+  }
+  currentSession = data.session;
+  loginEls.msg.textContent = "";
+  loginEls.pass.value = "";
+  loginEls.overlay.classList.add("hidden");
+  loadBets();
+}
+
+async function doLogout() {
+  await supabaseClient.auth.signOut();
+  currentSession = null;
+  loginEls.overlay.classList.remove("hidden");
+}
+
+loginEls.btn.addEventListener("click", doLogin);
+loginEls.pass.addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+loginEls.logout.addEventListener("click", doLogout);
+
+// Tarkista olemassa oleva istunto sivun latautuessa (Supabase muistaa sen)
+supabaseClient.auth.getSession().then(({ data }) => {
+  if (data.session) {
+    currentSession = data.session;
+    loginEls.overlay.classList.add("hidden");
+    loadBets();
+  }
 });
+
+function sbHeaders() {
+  return {
+    "apikey": SUPABASE_ANON_KEY,
+    "Authorization": "Bearer " + (currentSession ? currentSession.access_token : SUPABASE_ANON_KEY),
+    "Content-Type": "application/json",
+    "Prefer": "return=representation",
+  };
+}
+function sbBase() {
+  return SUPABASE_URL.replace(/\/$/, "") + "/rest/v1";
+}
+function sbReady() {
+  return !!currentSession;
+}
 
 const tEls = {
   saveBet: document.getElementById("saveBet"),
@@ -849,24 +946,6 @@ const tEls = {
   kpiRow: document.getElementById("kpiRow"),
   betList: document.getElementById("betList"),
 };
-
-function sbHeaders() {
-  const anon = sb.anon.value.trim();
-  const seula = sb.seula.value.trim();
-  return {
-    "apikey": anon,
-    "Authorization": "Bearer " + anon,
-    "x-seula-key": seula,
-    "Content-Type": "application/json",
-    "Prefer": "return=representation",
-  };
-}
-function sbBase() {
-  return sb.url.value.trim().replace(/\/$/, "") + "/rest/v1";
-}
-function sbReady() {
-  return sb.url.value.trim() && sb.anon.value.trim() && sb.seula.value.trim();
-}
 
 // Esitäytä päivämäärä tänään
 document.getElementById("f-pvm").value = new Date().toISOString().slice(0, 10);
@@ -885,7 +964,7 @@ document.getElementById("f-pvm").value = new Date().toISOString().slice(0, 10);
 
 // Jaettu tallennusfunktio — käytetään sekä Seuranta-lomakkeesta että ottelukorteista
 async function insertBet(row) {
-  if (!sbReady()) throw new Error("Täytä Supabase-asetukset (Seuranta-välilehti).");
+  if (!sbReady()) throw new Error("Et ole kirjautunut sisään. Lataa sivu uudelleen ja kirjaudu.");
   const res = await fetch(sbBase() + "/bets", {
     method: "POST", headers: sbHeaders(), body: JSON.stringify(row),
   });
@@ -896,7 +975,7 @@ async function insertBet(row) {
 async function saveBet() {
   tEls.trackErr.innerHTML = "";
   if (!sbReady()) {
-    tEls.trackErr.innerHTML = '<div class="err">Täytä ensin Supabase-asetukset (URL, anon-avain, seula-avain).</div>';
+    tEls.trackErr.innerHTML = '<div class="err">Et ole kirjautunut sisään. Lataa sivu uudelleen ja kirjaudu.</div>';
     return;
   }
   const kerroin = parseFloat(document.getElementById("f-kerroin").value);
@@ -941,7 +1020,7 @@ async function saveBet() {
 
 async function loadBets() {
   if (!sbReady()) {
-    tEls.betList.innerHTML = '<div class="empty">Täytä Supabase-asetukset nähdäksesi vedot.</div>';
+    tEls.betList.innerHTML = '<div class="empty">Kirjaudu sisään nähdäksesi vedot.</div>';
     tEls.kpiRow.innerHTML = "";
     return;
   }
